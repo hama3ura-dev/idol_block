@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head prefix="og: https://ogp.me/ns#">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>IDOL BLOCK</title>
+<link rel="icon" href="favicon.ico" sizes="any"><!-- ブラウザのタブに出るアイコン -->
+
+<!-- ===== SNS でリンクを貼ったときの表示（OGP） =====
+  ・タイトルと説明文（content="…" の中）は自由に書き換えてください。
+      og:title       … 30～40文字くらいまで
+      og:description / description … 80～90文字くらいまで
+  ・og:url と og:image は、公開している場所の https:// から始まる完全なアドレスにします。
+  ・画像（ogp.png）は 1200×630。作り直し方は option/readme2.txt を見てください。
+  ・SNS は一度読んだ内容をしばらく覚えているので、変えてもすぐには反映されないことがあります。 -->
+<meta name="description" content="著作権フリーのスマホで遊べるブロック崩し。ブロックを崩すと下から別の絵が現れます。全3ステージ、効果音・BGM付き。">
+<meta property="og:site_name" content="IDOL ATTACK">
+<meta property="og:title" content="IDOL BLOCK - スマホで遊べるブロック崩し">
+<meta property="og:description" content="スマホで遊べるブロック崩し。ブロックを崩すと下から別の絵が現れます。全3ステージ、効果音・BGM付き。絵など自由に改変可能です">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://hama3ura-dev.github.io/idol_block/">
+<meta property="og:image" content="https://hama3ura-dev.github.io/idol_block/ogp.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="IDOL BLOCKのロゴ タイトル画面">
+<meta property="og:locale" content="ja_JP">
+<!-- X（旧 Twitter）用：大きな画像付きのカードで表示する -->
+<meta name="twitter:card" content="summary_large_image">
+
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #111827;
+    overflow: hidden;
+    overscroll-behavior: none;
+    font-family: "Segoe UI", "Hiragino Sans", "Meiryo", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #0b1020;
+    border-radius: 8px;
+    touch-action: none;      /* タッチでスクロール・拡大させない */
+    /* 縦長（402:874）のまま画面に収める */
+    width: min(100vw, calc(100dvh * 402 / 874));
+    height: auto;
+    aspect-ratio: 402 / 874;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<script>
+// ===== 設定 =====
+// 画面サイズは iPhone 18 Pro（1206×2622 ピクセル / 3倍表示 = 402×874）を想定
+const CONFIG = {
+  width: 402,           // ゲーム画面の幅（論理ピクセル）
+  height: 874,          // ゲーム画面の高さ（論理ピクセル）
+
+  // ----- ステージ -----
+  // 画像は imageDir フォルダの中の block[ステージ番号][a/b/c].png
+  //   a = 最初の絵 / b = ブロックを崩すと見える絵 / c = ステージセレクトのサムネイル
+  stages: [
+    { name: "龍崎薫", desc: "屋外" },
+    { name: "佐々木千枝",   desc: "高級クラブ" },
+    { name: "赤城みりあ", desc: "ホテル" },
+  ],
+  imageDir: "image/",      // 画像を置くフォルダ（index.html から見た場所）
+  clearImage: "clear.png", // 全ステージクリアのご褒美画面（imageDir の中。縦画面いっぱいに表示）
+
+  // ----- ブロック -----
+  rows: 10,
+  cols: 6,
+  brickAreaTop: 66,     // ブロック領域の上端
+  brickHeight: 32,      // 1段の高さ（10段 × 32 = 320px → 画面の上半分くらい）
+  sideMargin: 14,       // 左右の余白
+
+  // ----- パドル -----
+  // パドルの位置（画面の下端からの距離）。大きくするほどパドルが上になり、
+  // パドルの下の「指を置いてなぞる場所」が広くなる（以前は 120）
+  paddleFromBottom: 200,
+
+  // ----- 残機 -----
+  lives: 3,             // 最初の残機
+  livesBonusOnClear: 1, // ステージをクリアしたときに増える残機
+
+  // ----- ボールのスピード（単位：ピクセル/秒、すべて整数） -----
+  speedStart: 320,      // 最初のスピード
+  speedMax: 800,        // 最高スピード（これ以上は速くならない。以前は 600）
+  speedUpPerBrick: 5,   // ブロックを1個壊すごとに速くなる量
+  speedUpPerPaddle: 3,  // パドルで打ち返すごとに速くなる量
+  speedUpPerCeiling: 4, // 天井で跳ね返るごとに速くなる量
+  speedDownOnMiss: 90,  // 残機を1つ失ったときに遅くする量（最初のスピードより遅くはならない）
+  speedDownOnStageClear: 100, // ステージをクリアして次へ進むときに遅くする量
+
+  // ----- 音 -----
+  sound: true,          // false にすると音を鳴らさない
+  seVolume: 1.0,        // 効果音の音量（0.0〜1.0）
+  bgmVolume: 1.0,       // BGM の音量（0.0〜1.0）。BGM のファイル自体も効果音より小さめに作ってある
+  // 効果音のファイル
+  se: {
+    start:  "se/start.mp3",   // ステージ開始のフレーズ
+    brick:  "se/brick.mp3",   // ブロックに当たった
+    paddle: "se/paddle.mp3",  // パドルに当たった
+    wall:   "se/wall.mp3",    // 壁・天井に当たった
+    miss:   "se/miss.mp3",    // ミス
+    clear:  "se/clear.mp3",   // ステージクリアのジングル（ステージ1・2・3共通）
+    allclear: "se/allclear.mp3", // 3ステージすべてクリアしたときのジングル
+  },
+  // BGM（ステージ1・2・3の順）。スタートのフレーズが鳴り終わってから始まり、ループする
+  //   file     … ふだんの BGM
+  //   fastFile … ブロックが残り少なくなったら切り替わる、アップテンポ版の BGM
+  //   bpm / fastBpm / bars … 曲のテンポと小節数（1周の長さ = bars × 4拍 × 60 ÷ bpm 秒）。
+  //                曲を差し替えたときは、その曲に合わせて変える
+  bgm: [
+    { file: "bgm/stage1.mp3", bpm: 120, fastFile: "bgm/stage1b.mp3", fastBpm: 138, bars: 16 },
+    { file: "bgm/stage2.mp3", bpm: 140, fastFile: "bgm/stage2b.mp3", fastBpm: 161, bars: 16 },
+    { file: "bgm/stage3.mp3", bpm: 170, fastFile: "bgm/stage3b.mp3", fastBpm: 195, bars: 16 },
+  ],
+  fastBgmAtBricksLeft: 10, // 残りのブロックがこの数以下になったら、アップテンポ版の BGM に切り替える
+  bgmGapAfterStart: 0.2, // スタートのフレーズが終わってから BGM が始まるまでの間（秒）
+  bgmLoopStart: 0.1,     // ループの開始位置（秒）。MP3 の先頭にある無音をとばすため
+
+  // ----- アクセス解析（Google アナリティクス） -----
+  // Google アナリティクスの「測定 ID」（G- で始まる番号）を "" の中に入れると、アクセス数を数え始める。
+  // 例：analyticsId: "G-ABC123DEF4",
+  // 数えた結果は Google アナリティクスの管理画面でだけ見られる（ゲームの画面には何も出ない）。
+  // 空のときと、自分の PC で試しているとき（localhost・ダブルクリックで開いたとき）は何もしない。
+  analyticsId: "G-2903PKLN9Q",
+};
+
+// ===== アクセス解析（Google アナリティクス） =====
+(function setupAnalytics() {
+  const id = (CONFIG.analyticsId || "").trim();
+  if (!/^G-[A-Z0-9]+$/i.test(id)) return;                     // ID が未設定なら何もしない
+  const host = location.hostname;
+  if (location.protocol === "file:" || host === "localhost" || host === "127.0.0.1") return; // 試し遊びは数えない
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { dataLayer.push(arguments); };
+  gtag("js", new Date());
+  gtag("config", id);
+  const s = document.createElement("script");
+  s.async = true;
+  s.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(id);
+  document.head.appendChild(s);
+})();
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = CONFIG.width, H = CONFIG.height;
+const STAGE_COUNT = CONFIG.stages.length;
+
+// 高解像度画面（iPhoneは3倍）でもくっきり描く
+function setupCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+setupCanvas();
+window.addEventListener("resize", setupCanvas);
+
+// ===== 画像読み込み =====
+function loadImage(src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null); // 無い場合は色ブロックなどで代用
+    img.src = src + "?t=" + Date.now(); // キャッシュ回避（差し替えを即反映）
+  });
+}
+
+// ブロック領域
+const area = {
+  x: CONFIG.sideMargin,
+  y: CONFIG.brickAreaTop,
+  w: W - CONFIG.sideMargin * 2,
+  h: CONFIG.rows * CONFIG.brickHeight,
+};
+const brickW = area.w / CONFIG.cols;
+const brickH = CONFIG.brickHeight;
+
+// 画像を (w×h) の枠にぴったり収める（縦横比を保ってはみ出しをトリミング）
+function coverFit(img, w, h) {
+  const scale = Math.max(w / img.width, h / img.height);
+  const sw = w / scale, sh = h / scale;
+  return { sx: (img.width - sw) / 2, sy: (img.height - sh) / 2, scale };
+}
+function drawCover(img, x, y, w, h) {
+  const f = coverFit(img, w, h);
+  ctx.drawImage(img, f.sx, f.sy, w / f.scale, h / f.scale, x, y, w, h);
+}
+
+// ===== 音（効果音・BGM） =====
+// ・Web サーバーに置いたとき（スマホなど）は Web Audio で鳴らす。BGM はつなぎ目なしでループする。
+// ・PC で index.html をダブルクリックして開いたとき（file://）は Web Audio で読み込めないので、
+//   普通の <audio> で鳴らす（BGM のループはほぼつなぎ目なし）。
+// ・スマホは最初にタップするまで音が出せないので、タップのたびに unlock() を呼んでいる。
+const Sound = (() => {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const useWebAudio = !!AC && location.protocol !== "file:";
+  let ac = null, seGain = null, bgmGain = null;
+  const buffers = {};   // Web Audio 用に読み込んだ音
+  const elems = {};     // <audio> で鳴らす場合の音
+  let bgmSrc = null, bgmEl = null, bgmTimer = null, bgmToken = 0;
+
+  function bgmKey(i, fast) { return (fast ? "bgmFast" : "bgm") + i; }
+  function loopLength(i, fast) {
+    const b = CONFIG.bgm[i];
+    return b.bars * 4 * 60 / (fast ? b.fastBpm : b.bpm);
+  }
+
+  function decode(ab) {
+    // 古い Safari は Promise 形式に対応していないのでコールバック形式で呼ぶ
+    return new Promise((res, rej) => ac.decodeAudioData(ab, res, rej));
+  }
+  function makeElem(url) {
+    const a = new Audio(url);
+    a.preload = "auto";
+    return a;
+  }
+  async function loadOne(key, url) {
+    if (useWebAudio) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(r.status);
+        buffers[key] = await decode(await r.arrayBuffer());
+        return;
+      } catch (e) { /* 読めなければ <audio> で鳴らす */ }
+    }
+    elems[key] = makeElem(url);
+  }
+
+  function load() {
+    if (!CONFIG.sound) return Promise.resolve();
+    if (useWebAudio) {
+      ac = new AC();
+      seGain = ac.createGain();  seGain.gain.value = CONFIG.seVolume;  seGain.connect(ac.destination);
+      bgmGain = ac.createGain(); bgmGain.gain.value = CONFIG.bgmVolume; bgmGain.connect(ac.destination);
+    }
+    const jobs = Object.entries(CONFIG.se).map(([k, url]) => loadOne(k, url));
+    CONFIG.bgm.forEach((b, i) => {
+      jobs.push(loadOne(bgmKey(i, false), b.file));
+      if (b.fastFile) jobs.push(loadOne(bgmKey(i, true), b.fastFile));
+    });
+    return Promise.all(jobs);
+  }
+
+  function unlock() {
+    if (ac && ac.state !== "running") ac.resume();
+  }
+
+  function play(key) {
+    if (!CONFIG.sound) return;
+    if (buffers[key]) {
+      const src = ac.createBufferSource();
+      src.buffer = buffers[key];
+      src.connect(seGain);
+      src.start();
+    } else if (elems[key]) {
+      const a = elems[key].cloneNode();
+      a.volume = CONFIG.seVolume;
+      a.play().catch(() => {});
+    }
+  }
+
+  function duration(key) {
+    if (buffers[key]) return buffers[key].duration;
+    const d = elems[key] && elems[key].duration;
+    return isFinite(d) ? d : 2.0;
+  }
+
+  function stopBGM() {
+    bgmToken++;
+    clearTimeout(bgmTimer);
+    if (bgmSrc) { try { bgmSrc.stop(); } catch (e) {} bgmSrc = null; }
+    if (bgmEl) { bgmEl.pause(); bgmEl = null; }
+  }
+
+  // delay 秒後にステージ i の BGM をループ再生（fast = true ならアップテンポ版）
+  function playBGM(i, delay, fast = false) {
+    stopBGM();
+    if (!CONFIG.sound || !CONFIG.bgm[i]) return;
+    if (fast && !buffers[bgmKey(i, true)] && !elems[bgmKey(i, true)]) fast = false; // 速い版が無ければふだんの曲
+    const key = bgmKey(i, fast);
+    const len = loopLength(i, fast);
+    const loopStart = CONFIG.bgmLoopStart;
+    const loopEnd = loopStart + len;
+    if (buffers[key]) {
+      const src = ac.createBufferSource();
+      src.buffer = buffers[key];
+      src.loop = true;
+      src.loopStart = loopStart;
+      src.loopEnd = Math.min(loopEnd, buffers[key].duration);
+      src.connect(bgmGain);
+      src.start(ac.currentTime + delay);
+      bgmSrc = src;
+    } else if (elems[key]) {
+      const token = bgmToken;
+      bgmTimer = setTimeout(() => {
+        if (token !== bgmToken) return;
+        const a = elems[key];
+        a.volume = CONFIG.bgmVolume;
+        a.loop = true;
+        a.currentTime = 0;
+        // ファイルの最後に曲の頭が少し付いているので、1周分進んだら巻き戻す
+        a.ontimeupdate = () => { if (a.currentTime >= loopEnd) a.currentTime -= len; };
+        a.play().catch(() => {});
+        bgmEl = a;
+      }, delay * 1000);
+    }
+  }
+
+  // ステージ開始：スタートのフレーズ → 鳴り終わってから BGM
+  function startStage(i) {
+    play("start");
+    playBGM(i, duration("start") + CONFIG.bgmGapAfterStart);
+  }
+
+  // ブロックが残り少なくなった：アップテンポ版に切り替え（すぐに鳴らす）
+  function fastBGM(i) {
+    playBGM(i, 0, true);
+  }
+
+  // ステージクリア：BGM を止めてジングル（最後のステージなら全クリア用）
+  function stageClear(isAllClear) {
+    stopBGM();
+    play(isAllClear ? "allclear" : "clear");
+  }
+
+  // アプリを切り替えたり画面を消したりしたら音を止め、戻ったら再開
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (ac) ac.suspend();
+      if (bgmEl) bgmEl.pause();
+    } else {
+      if (ac) ac.resume();
+      if (bgmEl) bgmEl.play().catch(() => {});
+    }
+  });
+
+  return { load, unlock, play, startStage, fastBGM, stageClear, stopBGM };
+})();
+
+const stageImgs = []; // [{ a, b, c, fitA, fitB }]
+let clearImg = null;
+
+// ===== ゲーム状態 =====
+const ROW_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6"];
+const STAGE_COLORS = ["#4CAF50", "#3B82F6", "#EC4899"];
+// パドルは指で隠れないよう、画面の下端から CONFIG.paddleFromBottom だけ上に置く
+const paddle = { w: 80, h: 12, x: W / 2 - 40, y: H - CONFIG.paddleFromBottom };
+const ball = { r: 7, x: 0, y: 0, vx: 0, vy: 0 };
+let bricks = [];
+let score = 0, lives = CONFIG.lives;
+let speedBoost = 0;   // 最初のスピードからの上乗せ分
+let cleared = [];     // ステージごとのクリア済みフラグ
+let stage = 0;        // 今遊んでいるステージ（0始まり）
+let bgmIsFast = false; // アップテンポ版の BGM に切り替え済みか
+// scene: select（ステージ選択）| ready（発射待ち）| playing | stageclear | over | allclear
+let scene = "select";
+let sceneTime = 0;    // 今の画面になった時刻（誤タップ防止用）
+
+function setScene(s) {
+  scene = s;
+  sceneTime = performance.now();
+}
+
+// 今のボールのスピード ＝ 最初のスピード ＋ 上乗せ分
+function currentSpeed() {
+  return CONFIG.speedStart + speedBoost;
+}
+// スピードを上げる・下げる（最初のスピード〜最高スピードの範囲に収める）
+function changeSpeed(amount) {
+  speedBoost = Math.max(0, Math.min(CONFIG.speedMax - CONFIG.speedStart, speedBoost + amount));
+}
+// 向きはそのままでスピードだけ合わせる
+function applySpeed() {
+  const len = Math.hypot(ball.vx, ball.vy);
+  if (len === 0) return;
+  const s = currentSpeed();
+  ball.vx = ball.vx / len * s;
+  ball.vy = ball.vy / len * s;
+}
+
+function initBricks() {
+  bricks = [];
+  for (let r = 0; r < CONFIG.rows; r++) {
+    for (let c = 0; c < CONFIG.cols; c++) {
+      bricks.push({ r, c, x: area.x + c * brickW, y: area.y + r * brickH, alive: true });
+    }
+  }
+}
+
+function resetBall() {
+  ball.x = paddle.x + paddle.w / 2;
+  ball.y = paddle.y - ball.r - 1;
+  ball.vx = 0; ball.vy = 0;
+  setScene("ready");
+}
+
+// 最初から（スコア0・クリア記録リセット）
+function resetAll() {
+  score = 0;
+  lives = CONFIG.lives;
+  speedBoost = 0;
+  cleared = new Array(STAGE_COUNT).fill(false);
+  Sound.stopBGM();
+  setScene("select");
+}
+
+function startStage(i) {
+  stage = i;
+  initBricks();
+  paddle.x = W / 2 - paddle.w / 2;
+  resetBall();
+  bgmIsFast = false;
+  Sound.startStage(i); // スタートのフレーズ → BGM
+}
+
+function stageClear() {
+  cleared[stage] = true;
+  Sound.stageClear(cleared.every(c => c)); // クリアのジングル（全ステージクリアなら特別なジングル）
+  lives += CONFIG.livesBonusOnClear;           // ボールが1個増える
+  changeSpeed(-CONFIG.speedDownOnStageClear);  // 次のステージは少し遅く始まる
+  setScene("stageclear");
+}
+
+function launch() {
+  const angle = (Math.random() * 60 - 30) * Math.PI / 180;
+  const s = currentSpeed();
+  ball.vx = s * Math.sin(angle);
+  ball.vy = -s * Math.cos(angle);
+  setScene("playing");
+}
+
+// ===== ステージセレクト画面のカード配置 =====
+const CARD = { x: 16, w: W - 32, h: 170, top: 168, gap: 18 };
+function cardRect(i) {
+  return { x: CARD.x, y: CARD.top + i * (CARD.h + CARD.gap), w: CARD.w, h: CARD.h };
+}
+
+// ===== 入力（マウス・タッチ共通：Pointer Events） =====
+function toGame(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (W / rect.width),
+    y: (e.clientY - rect.top) * (H / rect.height),
+  };
+}
+function movePaddleTo(x) {
+  paddle.x = Math.max(0, Math.min(W - paddle.w, x - paddle.w / 2));
+}
+// マウスは動かすだけで、タッチは指でなぞるとパドルが動く
+canvas.addEventListener("pointermove", e => {
+  if (scene === "ready" || scene === "playing") movePaddleTo(toGame(e).x);
+  e.preventDefault();
+});
+// クリック / タップ
+canvas.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  Sound.unlock(); // スマホは最初のタップで音が出せるようになる
+  const p = toGame(e);
+  // 画面が切り替わった直後の誤タップは無視
+  if (performance.now() - sceneTime < 500) return;
+
+  switch (scene) {
+    case "select":
+      for (let i = 0; i < STAGE_COUNT; i++) {
+        const r = cardRect(i);
+        if (!cleared[i] && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
+          startStage(i);
+          break;
+        }
+      }
+      break;
+    case "ready":
+      movePaddleTo(p.x);
+      launch();
+      break;
+    case "playing":
+      movePaddleTo(p.x);
+      break;
+    case "stageclear":
+      if (cleared.every(c => c)) setScene("allclear");
+      else setScene("select");
+      break;
+    case "over":
+    case "allclear":
+      resetAll();
+      break;
+  }
+});
+// iPhone でのダブルタップ拡大・長押しメニューを防ぐ
+document.addEventListener("touchmove", e => e.preventDefault(), { passive: false });
+document.addEventListener("contextmenu", e => e.preventDefault());
+
+// ===== 更新 =====
+// dt: 前のフレームからの経過秒（画面のリフレッシュレートに関係なく同じ速さになる）
+function update(dt) {
+  if (scene === "ready") {
+    ball.x = paddle.x + paddle.w / 2;
+    ball.y = paddle.y - ball.r - 1;
+    return;
+  }
+  if (scene !== "playing") return;
+
+  // 速いボールのすり抜け防止に、1回3px以下ずつ分割して動かす
+  const dist = Math.hypot(ball.vx, ball.vy) * dt;
+  const steps = Math.max(1, Math.ceil(dist / 3));
+  for (let i = 0; i < steps; i++) {
+    ball.x += ball.vx * dt / steps;
+    ball.y += ball.vy * dt / steps;
+    if (collide()) break;
+  }
+}
+
+function collide() {
+  // 壁
+  if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); Sound.play("wall"); }
+  if (ball.x + ball.r > W) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx); Sound.play("wall"); }
+  if (ball.y - ball.r < 0) {
+    // 天井で跳ね返る → 少し速くなる
+    ball.y = ball.r;
+    ball.vy = Math.abs(ball.vy);
+    changeSpeed(CONFIG.speedUpPerCeiling);
+    applySpeed();
+    Sound.play("wall");
+  }
+
+  // 落下 → 残機を減らしてスピードを少し緩める
+  if (ball.y - ball.r > H) {
+    lives--;
+    changeSpeed(-CONFIG.speedDownOnMiss);
+    Sound.play("miss");
+    if (lives <= 0) { Sound.stopBGM(); setScene("over"); }
+    else resetBall();
+    return true;
+  }
+
+  // パドル（当たった位置で角度が変わる）
+  if (ball.vy > 0 &&
+      ball.y + ball.r >= paddle.y && ball.y + ball.r <= paddle.y + paddle.h + 8 &&
+      ball.x >= paddle.x - ball.r && ball.x <= paddle.x + paddle.w + ball.r) {
+    const hit = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
+    const angle = Math.max(-1, Math.min(1, hit)) * 60 * Math.PI / 180;
+    changeSpeed(CONFIG.speedUpPerPaddle); // パドルで打ち返す → 少し速くなる
+    const speed = currentSpeed();
+    ball.vx = speed * Math.sin(angle);
+    ball.vy = -speed * Math.cos(angle);
+    ball.y = paddle.y - ball.r;
+    Sound.play("paddle");
+    return true;
+  }
+
+  // ブロック
+  for (const b of bricks) {
+    if (!b.alive) continue;
+    const nx = Math.max(b.x, Math.min(ball.x, b.x + brickW));
+    const ny = Math.max(b.y, Math.min(ball.y, b.y + brickH));
+    const dx = ball.x - nx, dy = ball.y - ny;
+    if (dx * dx + dy * dy <= ball.r * ball.r) {
+      b.alive = false;
+      score += (CONFIG.rows - b.r) * 10;
+      // どちらの面に当たったかで反射方向を決める
+      const overlapX = Math.min(ball.x + ball.r - b.x, b.x + brickW - (ball.x - ball.r));
+      const overlapY = Math.min(ball.y + ball.r - b.y, b.y + brickH - (ball.y - ball.r));
+      if (overlapX < overlapY) ball.vx = -ball.vx;
+      else ball.vy = -ball.vy;
+      changeSpeed(CONFIG.speedUpPerBrick); // ブロックを壊すたびに少し速くなる
+      applySpeed();
+      Sound.play("brick");
+      const left = bricks.filter(x => x.alive).length;
+      if (left === 0) stageClear();
+      else if (!bgmIsFast && left <= CONFIG.fastBgmAtBricksLeft) {
+        bgmIsFast = true;
+        Sound.fastBGM(stage); // 残りわずか → BGM をアップテンポ版に
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+// ===== 描画（共通） =====
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function text(str, x, y, font, color, align = "center") {
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function drawLives(rightX, y) {
+  for (let i = 0; i < lives; i++) {
+    ctx.beginPath();
+    ctx.arc(rightX - i * 20 - 7, y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+  }
+  text("残機", rightX - Math.max(lives, 1) * 20 - 4, y, "bold 18px sans-serif", "#e5e7eb", "right");
+}
+
+// ===== 描画：ステージセレクト =====
+function drawSelect() {
+  const anyCleared = cleared.some(c => c);
+  text("IDOL BLOCK", W / 2, 58, "bold 30px sans-serif", "#f3f4f6");
+  text(anyCleared ? "次のステージを選んでください" : "すべてクリアするとご褒美画像があります",
+       W / 2, 98, "15px sans-serif", "#9ca3af");
+
+  text("SCORE: " + score, 16, 136, "bold 18px sans-serif", "#e5e7eb", "left");
+  drawLives(W - 16, 136);
+
+  for (let i = 0; i < STAGE_COUNT; i++) {
+    const r = cardRect(i);
+    const st = CONFIG.stages[i];
+    const img = stageImgs[i] && stageImgs[i].c;
+
+    // カード
+    ctx.fillStyle = "#1f2937";
+    roundRect(r.x, r.y, r.w, r.h, 12); ctx.fill();
+    ctx.strokeStyle = cleared[i] ? "#374151" : STAGE_COLORS[i % STAGE_COLORS.length];
+    ctx.lineWidth = 2;
+    roundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 12); ctx.stroke();
+
+    // サムネイル（c の画像）
+    const tx = r.x + 12, ty = r.y + 12, tw = 170, th = r.h - 24;
+    ctx.save();
+    roundRect(tx, ty, tw, th, 8); ctx.clip();
+    if (img) drawCover(img, tx, ty, tw, th);
+    else {
+      ctx.fillStyle = STAGE_COLORS[i % STAGE_COLORS.length];
+      ctx.fillRect(tx, ty, tw, th);
+      text(String(i + 1), tx + tw / 2, ty + th / 2, "bold 48px sans-serif", "rgba(255,255,255,0.8)");
+    }
+    ctx.restore();
+
+    // 文字
+    const lx = tx + tw + 16;
+    text("STAGE " + (i + 1), lx, r.y + 40, "bold 20px sans-serif", "#f3f4f6", "left");
+    text(st.name, lx, r.y + 74, "bold 20px sans-serif", "#e5e7eb", "left");
+    text(st.desc, lx, r.y + 102, "14px sans-serif", "#9ca3af", "left");
+    if (!cleared[i]) {
+      text("▶ タップでスタート", lx, r.y + 140, "bold 13px sans-serif",
+           STAGE_COLORS[i % STAGE_COLORS.length], "left");
+    }
+
+    // クリア済み
+    if (cleared[i]) {
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      roundRect(r.x, r.y, r.w, r.h, 12); ctx.fill();
+      ctx.save();
+      ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
+      ctx.rotate(-0.12);
+      ctx.strokeStyle = "#facc15";
+      ctx.lineWidth = 3;
+      roundRect(-80, -24, 160, 48, 8); ctx.stroke();
+      text("CLEAR!", 0, 1, "bold 28px sans-serif", "#facc15");
+      ctx.restore();
+    }
+  }
+
+  text("クリアしたステージは選べません", W / 2, CARD.top + STAGE_COUNT * (CARD.h + CARD.gap) + 8,
+       "12px sans-serif", "#4b5563");
+}
+
+// ===== 描画：プレイ画面 =====
+function drawImageArea(img, fit, dx, dy, dw, dh) {
+  // ブロック領域内の (dx,dy,dw,dh) に対応する画像部分を描く
+  ctx.drawImage(
+    img,
+    fit.sx + (dx - area.x) / fit.scale, fit.sy + (dy - area.y) / fit.scale,
+    dw / fit.scale, dh / fit.scale,
+    dx, dy, dw, dh
+  );
+}
+
+function drawBricks() {
+  const si = stageImgs[stage] || {};
+  // 下の絵（b）
+  if (si.b) drawImageArea(si.b, si.fitB, area.x, area.y, area.w, area.h);
+
+  // 上の絵（a）を生きているブロックの分だけ描く
+  for (const b of bricks) {
+    if (!b.alive) continue;
+    if (si.a) {
+      drawImageArea(si.a, si.fitA, b.x, b.y, brickW, brickH);
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(b.x + 0.5, b.y + 0.5, brickW - 1, brickH - 1);
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.fillRect(b.x + 1, b.y + 1, brickW - 2, 2);
+    } else {
+      ctx.fillStyle = ROW_COLORS[b.r % ROW_COLORS.length];
+      const bx = b.x + 2, by = b.y + 2, bw = brickW - 4, bh = brickH - 4;
+      roundRect(bx, by, bw, bh, 4); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      roundRect(bx + 4, by + 3, bw - 8, 3, 1.5); ctx.fill();
+    }
+  }
+}
+
+function drawHUD() {
+  text("SCORE: " + score, 14, 22, "bold 18px sans-serif", "#e5e7eb", "left");
+  drawLives(W - 14, 22);
+
+  // 2行目：ステージ名とスピードメーター
+  text("STAGE " + (stage + 1) + " " + CONFIG.stages[stage].name, 14, 48,
+       "bold 12px sans-serif", "#9ca3af", "left");
+  const ratio = (currentSpeed() - CONFIG.speedStart) /
+                Math.max(1, CONFIG.speedMax - CONFIG.speedStart);
+  const mw = 110, mh = 6, mx = W - 14 - mw, my = 45;
+  text("SPEED", mx - 6, my + mh / 2, "bold 11px sans-serif", "#9ca3af", "right");
+  ctx.fillStyle = "#374151";
+  roundRect(mx, my, mw, mh, 3); ctx.fill();
+  ctx.fillStyle = ratio < 0.5 ? "#22c55e" : ratio < 0.85 ? "#eab308" : "#ef4444";
+  roundRect(mx, my, Math.max(mh, mw * ratio), mh, 3); ctx.fill();
+}
+
+function drawMessage(lines) {
+  // lines: [{ t: 文字, font, color }]
+  const y0 = paddle.y - 230;
+  const h = 30 + lines.length * 38;
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0, y0, W, h);
+  lines.forEach((l, i) => text(l.t, W / 2, y0 + 34 + i * 38, l.font, l.color));
+}
+
+function drawPlay() {
+  drawBricks();
+  drawHUD();
+
+  // パドル
+  ctx.fillStyle = "#e5e7eb";
+  roundRect(paddle.x, paddle.y, paddle.w, paddle.h, 6); ctx.fill();
+
+  // ボール
+  if (scene === "ready" || scene === "playing") {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+  }
+
+  // 操作の案内（パドルの下＝指を置く場所）。場所が分かるよう薄く色を付ける
+  const zoneTop = paddle.y + paddle.h + 24;
+  ctx.fillStyle = "rgba(255,255,255,0.035)";
+  roundRect(8, zoneTop, W - 16, H - zoneTop - 8, 14); ctx.fill();
+  text("ここを左右になぞって操作", W / 2, (zoneTop + H - 8) / 2, "12px sans-serif", "#4b5563");
+
+  if (scene === "ready") {
+    drawMessage([{ t: "タップ / クリックで発射", font: "bold 24px sans-serif", color: "#f3f4f6" }]);
+  }
+  if (scene === "stageclear") {
+    const last = cleared.every(c => c);
+    drawMessage([
+      { t: "STAGE CLEAR!", font: "bold 32px sans-serif", color: "#facc15" },
+      { t: "ボール +" + CONFIG.livesBonusOnClear, font: "bold 18px sans-serif", color: "#f3f4f6" },
+      { t: last ? "タップで次へ" : "タップで次のステージを選ぶ", font: "15px sans-serif", color: "#9ca3af" },
+    ]);
+  }
+  if (scene === "over") {
+    drawMessage([
+      { t: "GAME OVER", font: "bold 32px sans-serif", color: "#f87171" },
+      { t: "SCORE: " + score, font: "bold 18px sans-serif", color: "#f3f4f6" },
+      { t: "タップでタイトルへ", font: "15px sans-serif", color: "#9ca3af" },
+    ]);
+  }
+}
+
+// ===== 描画：全ステージクリア =====
+function drawAllClear() {
+  if (clearImg) {
+    drawCover(clearImg, 0, 0, W, H); // 縦画面いっぱい
+  } else {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#14103A"); g.addColorStop(1, "#4A2366");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    text("おめでとう！", W / 2, H / 2 - 40, "bold 40px sans-serif", "#FFD54F");
+    text("ALL STAGE CLEAR", W / 2, H / 2 + 10, "bold 16px sans-serif", "#ffffff");
+  }
+  // 最終スコア（画面下）
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0, H - 50, W, 50);
+  text("FINAL SCORE: " + score, W / 2, H - 33, "bold 20px sans-serif", "#facc15");
+  text("タップでタイトルへ", W / 2, H - 12, "12px sans-serif", "#d1d5db");
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (scene === "select") drawSelect();
+  else if (scene === "allclear") drawAllClear();
+  else drawPlay();
+}
+
+let lastTime = 0;
+function loop(t) {
+  // タブを切り替えた後などに一気に進まないよう、最大0.05秒に制限
+  const dt = lastTime ? Math.min(0.05, (t - lastTime) / 1000) : 0;
+  lastTime = t;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ===== 開始 =====
+const loads = [];
+for (let i = 0; i < STAGE_COUNT; i++) {
+  const n = i + 1;
+  loads.push(Promise.all([
+    loadImage(`${CONFIG.imageDir}block${n}a.png`),
+    loadImage(`${CONFIG.imageDir}block${n}b.png`),
+    loadImage(`${CONFIG.imageDir}block${n}c.png`),
+  ]).then(([a, b, c]) => {
+    stageImgs[i] = {
+      a, b, c,
+      fitA: a && coverFit(a, area.w, area.h),
+      fitB: b && coverFit(b, area.w, area.h),
+    };
+  }));
+}
+loads.push(loadImage(CONFIG.imageDir + CONFIG.clearImage).then(img => { clearImg = img; }));
+Sound.load(); // 音は裏で読み込む（読み込み中でもゲームは始められる）
+
+Promise.all(loads).then(() => {
+  resetAll();
+  requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>

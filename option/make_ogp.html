@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>OGP画像の生成</title>
+<!--
+  SNS でリンクを貼ったときに出るサムネイル（OGP 画像 ../ogp.png、1200×630）を組み立てるページ。
+  実際のゲーム（../index.html）を中に3つ表示し、少し角度を付けて並べ、上にロゴを重ねています。
+  作り方は readme2.txt を見てください（Web サーバー経由で開き、Edge / Chrome で画像として保存します）。
+-->
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    position: relative;
+    background:
+      radial-gradient(ellipse 60% 55% at 50% 40%, rgba(239, 68, 68, 0.28), transparent 70%),
+      radial-gradient(ellipse 90% 70% at 50% 110%, rgba(59, 130, 246, 0.35), transparent 70%),
+      linear-gradient(180deg, #0b1020 0%, #141a3a 55%, #0b1020 100%);
+    font-family: "Arial Black", "Impact", sans-serif;
+  }
+  /* うっすらした方眼 */
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 80%);
+  }
+  /* 散らばったブロックの飾り */
+  .chip { position: absolute; width: 46px; height: 22px; border-radius: 4px; opacity: 0.55;
+          box-shadow: 0 0 18px currentColor; }
+
+  /* ゲーム画面（中身は本物のゲーム） */
+  .screen {
+    position: absolute; top: 0; left: 0;
+    width: 402px; height: 874px;
+    border: 0; border-radius: 26px;
+    box-shadow: 0 0 0 10px #1f2937, 0 0 0 12px #4b5563, 0 30px 60px rgba(0,0,0,0.7), 0 0 80px rgba(59,130,246,0.35);
+    transform-origin: 50% 0;
+    pointer-events: none;
+    background: #111827;
+  }
+  .main  { left: 399px; top: 262px; transform: perspective(1500px) rotateX(26deg) rotateZ(-3deg) scale(1.0); z-index: 3; }
+  .left  { left: 70px;  top: 300px; transform: perspective(1200px) rotateY(32deg) rotateX(14deg) rotateZ(4deg) scale(0.8); z-index: 2; filter: brightness(0.55) saturate(0.9); }
+  .right { left: 728px; top: 300px; transform: perspective(1200px) rotateY(-32deg) rotateX(14deg) rotateZ(-6deg) scale(0.8); z-index: 2; filter: brightness(0.55) saturate(0.9); }
+
+  /* ロゴ：赤い文字を少し斜めに。白いふち＋影の層と、赤いグラデーションの層を重ねる */
+  .logo {
+    position: absolute; left: 0; right: 0; top: 34px; z-index: 10;
+    text-align: center; line-height: 0.86; font-size: 124px; letter-spacing: 2px;
+    transform: rotate(-7deg) skewX(-8deg);
+  }
+  .logo span { display: block; position: absolute; left: 0; right: 0; }
+  .logo .back {
+    color: #fff;
+    -webkit-text-stroke: 18px #fff;
+    text-shadow: 0 10px 0 #7f1d1d, 0 18px 30px rgba(0,0,0,0.65);
+    filter: drop-shadow(0 0 22px rgba(239,68,68,0.75));
+  }
+  .logo .mid { color: transparent; -webkit-text-stroke: 8px #7f1d1d; }
+  .logo .front {
+    background: linear-gradient(180deg, #ff8a8a 0%, #ef4444 38%, #dc2626 62%, #991b1b 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .logo .shine {
+    background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 45%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<div id="chips"></div>
+
+<iframe class="screen left"  data-stage="1" src="../index.html"></iframe>
+<iframe class="screen right" data-stage="2" src="../index.html"></iframe>
+<iframe class="screen main"  data-stage="0" src="../index.html"></iframe>
+
+<div class="logo">
+  <span class="back">BLOCK<br>ATTACK</span>
+  <span class="mid">BLOCK<br>ATTACK</span>
+  <span class="front">BLOCK<br>ATTACK</span>
+  <span class="shine">BLOCK<br>ATTACK</span>
+</div>
+
+<script>
+// 背景に散らばるブロック（毎回同じ配置になるよう固定の値）
+const chips = [
+  [60, 70, "#ef4444", -18], [180, 170, "#eab308", 12], [95, 520, "#22c55e", 20], [1080, 90, "#3b82f6", 15],
+  [1010, 210, "#f97316", -10], [1110, 500, "#ef4444", -22], [300, 40, "#22c55e", 8], [880, 40, "#eab308", -6],
+];
+for (const [x, y, c, r] of chips) {
+  const d = document.createElement("div");
+  d.className = "chip";
+  d.style.cssText = `left:${x}px;top:${y}px;background:${c};color:${c};transform:rotate(${r}deg)`;
+  document.getElementById("chips").appendChild(d);
+}
+
+// 各ゲーム画面を「プレイ中」の場面にする
+// 崩したブロック（行, 列）。下の段を中心に崩して、下の絵（夜・開花）が見えるようにする
+const HOLES = [
+  [[9,0],[9,1],[9,2],[9,3],[9,4],[9,5],[8,1],[8,2],[8,3],[8,4],[7,2],[7,3],[6,2],[6,3],[5,3],[8,5],[7,4]],
+  [[9,0],[9,1],[9,2],[9,5],[8,0],[8,1],[7,0],[6,0],[9,4],[8,5]],
+  [[9,1],[9,2],[9,3],[9,4],[8,2],[8,3],[9,0],[9,5],[8,1],[8,4],[7,2],[7,3],[6,3],[5,3],[4,3],[7,1]],
+];
+function setupFrame(frame) {
+  const w = frame.contentWindow;
+  const i = Number(frame.dataset.stage);
+  const tryIt = () => {
+    let ready = false;
+    try { ready = w.eval("typeof stageImgs !== 'undefined' && stageImgs.length === 3 && stageImgs.every(Boolean) && scene === 'select'"); } catch (e) {}
+    if (!ready) return setTimeout(tryIt, 50);
+    w.eval(`
+      CONFIG.sound = false;
+      startStage(${i});
+      for (const [r, c] of ${JSON.stringify(HOLES[i])}) bricks[r * CONFIG.cols + c].alive = false;
+      score = ${[1230, 860, 2150][i]};
+      speedBoost = ${[180, 90, 260][i]};
+      paddle.x = ${[150, 120, 210][i]};
+      setScene("playing");
+      // ボールは崩れた穴の中（画像に写る高さ）に置く
+      ball.x = ${[231, 76, 231][i]}; ball.y = ${[274, 274, 210][i]}; ball.vx = 0; ball.vy = 0;
+      draw();
+    `);
+    frame.dataset.ready = "1";
+    if ([...document.querySelectorAll("iframe")].every(f => f.dataset.ready)) document.title = "ready";
+  };
+  tryIt();
+}
+document.querySelectorAll("iframe").forEach(f => f.addEventListener("load", () => setupFrame(f)));
+</script>
+</body>
+</html>
