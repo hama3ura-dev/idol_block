@@ -45,6 +45,31 @@
     align-items: center;
     justify-content: center;
   }
+  /* ゲーム画面とスタートボタンを重ねるための入れ物（大きさはゲーム画面と同じ） */
+  #wrap { position: relative; line-height: 0; }
+  /* タイトル画面の「スタート」ボタン。絵（title.png）とは別に HTML で作っているので、
+     タイトルの絵を差し替えてもボタンはそのまま。--s はゲーム画面の拡大率（JS で設定） */
+  #startBtn {
+    position: absolute; left: 50%; bottom: 9%;
+    transform: translateX(-50%);
+    width: calc(var(--s, 1) * 230px);
+    height: calc(var(--s, 1) * 64px);
+    border: calc(var(--s, 1) * 3px) solid #fff;
+    border-radius: calc(var(--s, 1) * 32px);
+    background: linear-gradient(180deg, #f87171 0%, #ef4444 45%, #b91c1c 100%);
+    color: #fff;
+    font: bold calc(var(--s, 1) * 26px) "Segoe UI", "Hiragino Sans", "Meiryo", sans-serif;
+    letter-spacing: 0.2em; text-indent: 0.2em;
+    text-shadow: 0 2px 0 rgba(127, 29, 29, 0.8);
+    box-shadow: 0 0 calc(var(--s, 1) * 24px) rgba(239, 68, 68, 0.75), 0 calc(var(--s, 1) * 6px) 0 #7f1d1d;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  #startBtn:active { transform: translateX(-50%) translateY(calc(var(--s, 1) * 4px)); box-shadow: 0 0 calc(var(--s, 1) * 24px) rgba(239, 68, 68, 0.75), 0 calc(var(--s, 1) * 2px) 0 #7f1d1d; }
+  #startBtn[hidden] { display: none; }
+  @keyframes pulse { 50% { filter: brightness(1.15); } }
   canvas {
     display: block;
     background: #0b1020;
@@ -58,7 +83,10 @@
 </style>
 </head>
 <body>
-<canvas id="game"></canvas>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <button id="startBtn" type="button" hidden>スタート</button>
+</div>
 
 <script>
 // ===== 設定 =====
@@ -77,6 +105,8 @@ const CONFIG = {
   ],
   imageDir: "image/",      // 画像を置くフォルダ（index.html から見た場所）
   clearImage: "clear.png", // 全ステージクリアのご褒美画面（imageDir の中。縦画面いっぱいに表示）
+  titleImage: "title.png", // タイトル画面の絵（imageDir の中。縦画面いっぱいに表示。スタートボタンは HTML で上に重ねる）
+  doubleTapMs: 400,        // ご褒美画面からタイトルへ戻るダブルタップの間隔（ミリ秒）。これより速く2回タップで戻る
 
   // ----- ブロック -----
   rows: 10,
@@ -84,6 +114,10 @@ const CONFIG = {
   brickAreaTop: 66,     // ブロック領域の上端
   brickHeight: 32,      // 1段の高さ（10段 × 32 = 320px → 画面の上半分くらい）
   sideMargin: 14,       // 左右の余白
+  // ブロックの縁の線（絵の上に重ねる格子）。濃くするほどブロックの区切りがはっきりする
+  //   色は rgba(赤, 緑, 青, 濃さ0〜1)。以前は "rgba(0,0,0,0.35)" で太さ 1
+  brickBorderColor: "rgba(0,0,0,0.65)",
+  brickBorderWidth: 1.5,
 
   // ----- パドル -----
   // パドルの位置（画面の下端からの距離）。大きくするほどパドルが上になり、
@@ -107,9 +141,17 @@ const CONFIG = {
   sound: true,          // false にすると音を鳴らさない
   seVolume: 1.0,        // 効果音の音量（0.0〜1.0）
   bgmVolume: 1.0,       // BGM の音量（0.0〜1.0）。BGM のファイル自体も効果音より小さめに作ってある
+  mobileVolumeRate: 0.5, // スマホ・タブレットで開いたときの音量の倍率（スマホのスピーカーは大きく聞こえるため）
+  // 音量スライダー（ステージセレクト画面の右側）。効果音・BGM の両方に効く。
+  // 耳の感じ方に合わせて dB（デシベル）で目盛りを付けている。6dB 上がると音の大きさは約2倍
+  //   一番下 = ミュート / 下のすぐ上 = volumeSliderMinDb / 真ん中 = 上の音量そのまま（0dB）
+  //   一番上 = volumeSliderMaxDb
+  volumeSliderMinDb: -30,
+  volumeSliderMaxDb: 6,
   // 効果音のファイル
   se: {
-    start:  "se/start.mp3",   // ステージ開始のフレーズ
+    titleStart: "se/start.mp3", // タイトル画面で「スタート」ボタンを押したときの音
+    start:  "se/start2.mp3",  // ステージ開始のフレーズ
     brick:  "se/brick.mp3",   // ブロックに当たった
     paddle: "se/paddle.mp3",  // パドルに当たった
     wall:   "se/wall.mp3",    // 壁・天井に当たった
@@ -127,6 +169,8 @@ const CONFIG = {
     { file: "bgm/stage2.mp3", bpm: 140, fastFile: "bgm/stage2b.mp3", fastBpm: 161, bars: 16 },
     { file: "bgm/stage3.mp3", bpm: 170, fastFile: "bgm/stage3b.mp3", fastBpm: 195, bars: 16 },
   ],
+  // ステージセレクト画面の BGM（ループ）。bpm / bars の意味は上と同じ
+  selectBgm: { file: "bgm/select.mp3", bpm: 120, bars: 8 },
   fastBgmAtBricksLeft: 10, // 残りのブロックがこの数以下になったら、アップテンポ版の BGM に切り替える
   bgmGapAfterStart: 0.2, // スタートのフレーズが終わってから BGM が始まるまでの間（秒）
   bgmLoopStart: 0.1,     // ループの開始位置（秒）。MP3 の先頭にある無音をとばすため
@@ -166,6 +210,9 @@ function setupCanvas() {
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // スタートボタンの大きさをゲーム画面の表示サイズに合わせる
+  const w = canvas.getBoundingClientRect().width;
+  if (w) document.getElementById("wrap").style.setProperty("--s", w / W);
 }
 setupCanvas();
 window.addEventListener("resize", setupCanvas);
@@ -213,6 +260,46 @@ const Sound = (() => {
   const buffers = {};   // Web Audio 用に読み込んだ音
   const elems = {};     // <audio> で鳴らす場合の音
   let bgmSrc = null, bgmEl = null, bgmTimer = null, bgmToken = 0;
+  let bgmNow = null;    // 今鳴らしている（鳴らす予定の）BGM の名前
+
+  // ----- 音量 -----
+  // スマホ・タブレット（iPad は PC と同じ名乗り方をするので、タッチできる Mac も含める）
+  const ua = navigator.userAgent;
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
+                   (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const deviceRate = isMobile ? CONFIG.mobileVolumeRate : 1.0;
+  // スライダーの位置 0.0（一番下）〜 1.0（一番上）。前回の位置を覚えておく
+  const STORE_KEY = "block_attack_volume";
+  let sliderPos = 0.5;
+  try {
+    const v = parseFloat(localStorage.getItem(STORE_KEY));
+    if (v >= 0 && v <= 1) sliderPos = v;
+  } catch (e) {}
+  // スライダーの位置 → dB（下 volumeSliderMinDb 〜 真ん中 0 〜 上 volumeSliderMaxDb）
+  function sliderDb() {
+    return sliderPos <= 0.5 ? CONFIG.volumeSliderMinDb * (1 - sliderPos / 0.5)
+                            : CONFIG.volumeSliderMaxDb * (sliderPos - 0.5) / 0.5;
+  }
+  // dB → 倍率（一番下はミュート）
+  function sliderRate() {
+    return sliderPos <= 0 ? 0 : Math.pow(10, sliderDb() / 20);
+  }
+  function seVol()  { return CONFIG.seVolume  * deviceRate * sliderRate(); }
+  function bgmVol() { return CONFIG.bgmVolume * deviceRate * sliderRate(); }
+  // <audio> は 1.0 より大きくできないので 1.0 で止める（Web Audio は 1.0 より大きくできる）
+  function elemVol(v) { return Math.max(0, Math.min(1, v)); }
+  function applyVolume() {
+    if (seGain) seGain.gain.value = seVol();
+    if (bgmGain) bgmGain.gain.value = bgmVol();
+    if (bgmEl) bgmEl.volume = elemVol(bgmVol());
+  }
+  function getVolumePos() { return sliderPos; }
+  function setVolumePos(p) {
+    sliderPos = Math.max(0, Math.min(1, p));
+    if (Math.abs(sliderPos - 0.5) < 0.02) sliderPos = 0.5; // 真ん中に吸いつく
+    applyVolume();
+    try { localStorage.setItem(STORE_KEY, String(sliderPos)); } catch (e) {}
+  }
 
   function bgmKey(i, fast) { return (fast ? "bgmFast" : "bgm") + i; }
   function loopLength(i, fast) {
@@ -229,7 +316,9 @@ const Sound = (() => {
     a.preload = "auto";
     return a;
   }
+  const bust = "?t=" + Date.now(); // キャッシュ回避（音を差し替えたら、前の音が残らずすぐ反映される）
   async function loadOne(key, url) {
+    url += bust;
     if (useWebAudio) {
       try {
         const r = await fetch(url);
@@ -245,19 +334,23 @@ const Sound = (() => {
     if (!CONFIG.sound) return Promise.resolve();
     if (useWebAudio) {
       ac = new AC();
-      seGain = ac.createGain();  seGain.gain.value = CONFIG.seVolume;  seGain.connect(ac.destination);
-      bgmGain = ac.createGain(); bgmGain.gain.value = CONFIG.bgmVolume; bgmGain.connect(ac.destination);
+      seGain = ac.createGain();  seGain.connect(ac.destination);
+      bgmGain = ac.createGain(); bgmGain.connect(ac.destination);
+      applyVolume();
     }
     const jobs = Object.entries(CONFIG.se).map(([k, url]) => loadOne(k, url));
     CONFIG.bgm.forEach((b, i) => {
       jobs.push(loadOne(bgmKey(i, false), b.file));
       if (b.fastFile) jobs.push(loadOne(bgmKey(i, true), b.fastFile));
     });
+    if (CONFIG.selectBgm) jobs.push(loadOne("bgmSelect", CONFIG.selectBgm.file));
     return Promise.all(jobs);
   }
 
   function unlock() {
     if (ac && ac.state !== "running") ac.resume();
+    // <audio> の BGM は最初のタップ前だと鳴らせないので、止まっていたらここで鳴らし直す
+    if (bgmEl && bgmEl.paused && !document.hidden) bgmEl.play().catch(() => {});
   }
 
   function play(key) {
@@ -269,7 +362,7 @@ const Sound = (() => {
       src.start();
     } else if (elems[key]) {
       const a = elems[key].cloneNode();
-      a.volume = CONFIG.seVolume;
+      a.volume = elemVol(seVol());
       a.play().catch(() => {});
     }
   }
@@ -282,9 +375,10 @@ const Sound = (() => {
 
   function stopBGM() {
     bgmToken++;
+    bgmNow = null;
     clearTimeout(bgmTimer);
     if (bgmSrc) { try { bgmSrc.stop(); } catch (e) {} bgmSrc = null; }
-    if (bgmEl) { bgmEl.pause(); bgmEl = null; }
+    if (bgmEl) { bgmEl.pause(); bgmEl.ontimeupdate = null; bgmEl = null; }
   }
 
   // delay 秒後にステージ i の BGM をループ再生（fast = true ならアップテンポ版）
@@ -292,8 +386,27 @@ const Sound = (() => {
     stopBGM();
     if (!CONFIG.sound || !CONFIG.bgm[i]) return;
     if (fast && !buffers[bgmKey(i, true)] && !elems[bgmKey(i, true)]) fast = false; // 速い版が無ければふだんの曲
-    const key = bgmKey(i, fast);
-    const len = loopLength(i, fast);
+    playLoop(bgmKey(i, fast), loopLength(i, fast), delay);
+  }
+
+  // ステージセレクト画面の BGM（もう鳴っていればそのまま）
+  function selectBGM(delay = 0) {
+    const s = CONFIG.selectBgm;
+    if (!CONFIG.sound || !s || bgmNow === "bgmSelect") return;
+    stopBGM();
+    playLoop("bgmSelect", s.bars * 4 * 60 / s.bpm, delay);
+  }
+
+  // タイトルの「スタート」ボタン：決定音 → 鳴り終わってからステージセレクトの BGM
+  function titleStart() {
+    play("titleStart");
+    selectBGM(buffers.titleStart || elems.titleStart ? duration("titleStart") + CONFIG.bgmGapAfterStart : 0);
+  }
+
+  // key の音を delay 秒後から、1周 len 秒でループ再生
+  function playLoop(key, len, delay) {
+    if (!buffers[key] && !elems[key]) return; // まだ読み込めていない
+    bgmNow = key;
     const loopStart = CONFIG.bgmLoopStart;
     const loopEnd = loopStart + len;
     if (buffers[key]) {
@@ -307,17 +420,20 @@ const Sound = (() => {
       bgmSrc = src;
     } else if (elems[key]) {
       const token = bgmToken;
-      bgmTimer = setTimeout(() => {
+      const start = () => {
         if (token !== bgmToken) return;
         const a = elems[key];
-        a.volume = CONFIG.bgmVolume;
+        a.volume = elemVol(bgmVol());
         a.loop = true;
         a.currentTime = 0;
         // ファイルの最後に曲の頭が少し付いているので、1周分進んだら巻き戻す
         a.ontimeupdate = () => { if (a.currentTime >= loopEnd) a.currentTime -= len; };
         a.play().catch(() => {});
         bgmEl = a;
-      }, delay * 1000);
+      };
+      // すぐ鳴らすときは、ボタンを押した流れのまま鳴らす（スマホ・ブラウザに止められないように）
+      if (delay <= 0) start();
+      else bgmTimer = setTimeout(start, delay * 1000);
     }
   }
 
@@ -349,11 +465,12 @@ const Sound = (() => {
     }
   });
 
-  return { load, unlock, play, startStage, fastBGM, stageClear, stopBGM };
+  return { load, unlock, play, startStage, fastBGM, stageClear, stopBGM, selectBGM, titleStart,
+           getVolumePos, setVolumePos, sliderDb, sliderRate };
 })();
 
 const stageImgs = []; // [{ a, b, c, fitA, fitB }]
-let clearImg = null;
+let clearImg = null, titleImg = null;
 
 // ===== ゲーム状態 =====
 const ROW_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6"];
@@ -367,14 +484,25 @@ let speedBoost = 0;   // 最初のスピードからの上乗せ分
 let cleared = [];     // ステージごとのクリア済みフラグ
 let stage = 0;        // 今遊んでいるステージ（0始まり）
 let bgmIsFast = false; // アップテンポ版の BGM に切り替え済みか
-// scene: select（ステージ選択）| ready（発射待ち）| playing | stageclear | over | allclear
-let scene = "select";
+// scene: title（タイトル）| select（ステージ選択）| ready（発射待ち）| playing | stageclear | over | allclear
+let scene = "title";
 let sceneTime = 0;    // 今の画面になった時刻（誤タップ防止用）
+const startBtn = document.getElementById("startBtn");
 
 function setScene(s) {
   scene = s;
   sceneTime = performance.now();
+  startBtn.hidden = s !== "title"; // スタートボタンはタイトル画面だけ
 }
+
+// タイトル画面の「スタート」ボタン → ステージセレクトへ。
+// ボタンを押した瞬間に音を出せるようにして、そのままセレクト画面の BGM を鳴らす
+startBtn.addEventListener("click", () => {
+  if (scene !== "title" || performance.now() - sceneTime < 500) return; // 切り替え直後の誤タップは無視
+  Sound.unlock();
+  setScene("select");
+  Sound.titleStart(); // 決定音 → セレクト画面の BGM
+});
 
 // 今のボールのスピード ＝ 最初のスピード ＋ 上乗せ分
 function currentSpeed() {
@@ -409,14 +537,14 @@ function resetBall() {
   setScene("ready");
 }
 
-// 最初から（スコア0・クリア記録リセット）
+// 最初から（スコア0・クリア記録リセット）してタイトル画面へ
 function resetAll() {
   score = 0;
   lives = CONFIG.lives;
   speedBoost = 0;
   cleared = new Array(STAGE_COUNT).fill(false);
   Sound.stopBGM();
-  setScene("select");
+  setScene("title");
 }
 
 function startStage(i) {
@@ -445,10 +573,22 @@ function launch() {
 }
 
 // ===== ステージセレクト画面のカード配置 =====
-const CARD = { x: 16, w: W - 32, h: 170, top: 168, gap: 18 };
+// カードは左に寄せ、右側に音量スライダーを置く
+const CARD = { x: 12, w: W - 12 - 74, h: 170, top: 168, gap: 18 };
 function cardRect(i) {
   return { x: CARD.x, y: CARD.top + i * (CARD.h + CARD.gap), w: CARD.w, h: CARD.h };
 }
+// 音量スライダー（縦）。cx = 中心の x、top〜bottom = つまみが動く範囲
+const VOL = { cx: W - 33, top: 240, bottom: 652, hitL: W - 70 };
+const VOL_HIT = { x: VOL.hitL, y: VOL.top - 50, w: W - VOL.hitL, h: VOL.bottom - VOL.top + 110 };
+function inVolumeSlider(p) {
+  return p.x >= VOL_HIT.x && p.x <= VOL_HIT.x + VOL_HIT.w && p.y >= VOL_HIT.y && p.y <= VOL_HIT.y + VOL_HIT.h;
+}
+function volumeFromY(y) { // 上ほど大きい
+  return 1 - (Math.max(VOL.top, Math.min(VOL.bottom, y)) - VOL.top) / (VOL.bottom - VOL.top);
+}
+let volDragId = null; // スライダーを動かしている指（マウス）の id
+let lastTapTime = 0;  // ご褒美画面で最後にタップした時刻（ダブルタップの判定用）
 
 // ===== 入力（マウス・タッチ共通：Pointer Events） =====
 function toGame(e) {
@@ -463,14 +603,25 @@ function movePaddleTo(x) {
 }
 // マウスは動かすだけで、タッチは指でなぞるとパドルが動く
 canvas.addEventListener("pointermove", e => {
-  if (scene === "ready" || scene === "playing") movePaddleTo(toGame(e).x);
+  if (volDragId === e.pointerId) Sound.setVolumePos(volumeFromY(toGame(e).y));
+  else if (scene === "ready" || scene === "playing") movePaddleTo(toGame(e).x);
   e.preventDefault();
 });
+function endVolumeDrag(e) { if (volDragId === e.pointerId) volDragId = null; }
+canvas.addEventListener("pointerup", endVolumeDrag);
+canvas.addEventListener("pointercancel", endVolumeDrag);
 // クリック / タップ
 canvas.addEventListener("pointerdown", e => {
   e.preventDefault();
   Sound.unlock(); // スマホは最初のタップで音が出せるようになる
   const p = toGame(e);
+  // ステージセレクト画面の音量スライダー（画面切り替え直後でも動かせる）
+  if (scene === "select" && inVolumeSlider(p)) {
+    volDragId = e.pointerId;
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    Sound.setVolumePos(volumeFromY(p.y));
+    return;
+  }
   // 画面が切り替わった直後の誤タップは無視
   if (performance.now() - sceneTime < 500) return;
 
@@ -493,12 +644,18 @@ canvas.addEventListener("pointerdown", e => {
       break;
     case "stageclear":
       if (cleared.every(c => c)) setScene("allclear");
-      else setScene("select");
+      else { setScene("select"); Sound.selectBGM(); }
       break;
     case "over":
-    case "allclear":
       resetAll();
       break;
+    case "allclear": {
+      // ご褒美画面はうっかり1回タップしても戻らないよう、ダブルタップ（ダブルクリック）でタイトルへ
+      const now = performance.now();
+      if (now - lastTapTime < CONFIG.doubleTapMs) { lastTapTime = 0; resetAll(); }
+      else lastTapTime = now;
+      break;
+    }
   }
 });
 // iPhone でのダブルタップ拡大・長押しメニューを防ぐ
@@ -624,8 +781,8 @@ function drawLives(rightX, y) {
 // ===== 描画：ステージセレクト =====
 function drawSelect() {
   const anyCleared = cleared.some(c => c);
-  text("IDOL BLOCK", W / 2, 58, "bold 30px sans-serif", "#f3f4f6");
-  text(anyCleared ? "次のステージを選んでください" : "すべてクリアするとご褒美画像があります",
+  text("ブロック崩し", W / 2, 58, "bold 30px sans-serif", "#f3f4f6");
+  text(anyCleared ? "次のステージを選んでください" : "ステージを選んでください",
        W / 2, 98, "15px sans-serif", "#9ca3af");
 
   text("SCORE: " + score, 16, 136, "bold 18px sans-serif", "#e5e7eb", "left");
@@ -644,7 +801,7 @@ function drawSelect() {
     roundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 12); ctx.stroke();
 
     // サムネイル（c の画像）
-    const tx = r.x + 12, ty = r.y + 12, tw = 170, th = r.h - 24;
+    const tx = r.x + 12, ty = r.y + 12, tw = 140, th = r.h - 24;
     ctx.save();
     roundRect(tx, ty, tw, th, 8); ctx.clip();
     if (img) drawCover(img, tx, ty, tw, th);
@@ -656,7 +813,7 @@ function drawSelect() {
     ctx.restore();
 
     // 文字
-    const lx = tx + tw + 16;
+    const lx = tx + tw + 14;
     text("STAGE " + (i + 1), lx, r.y + 40, "bold 20px sans-serif", "#f3f4f6", "left");
     text(st.name, lx, r.y + 74, "bold 20px sans-serif", "#e5e7eb", "left");
     text(st.desc, lx, r.y + 102, "14px sans-serif", "#9ca3af", "left");
@@ -680,8 +837,72 @@ function drawSelect() {
     }
   }
 
-  text("クリアしたステージは選べません", W / 2, CARD.top + STAGE_COUNT * (CARD.h + CARD.gap) + 8,
+  text("クリアしたステージは選べません", CARD.x + CARD.w / 2, CARD.top + STAGE_COUNT * (CARD.h + CARD.gap) + 8,
        "12px sans-serif", "#4b5563");
+
+  drawVolumeSlider();
+}
+
+// 音量スライダー（ステージセレクト画面の右側）
+function drawVolumeSlider() {
+  const pos = Sound.getVolumePos();
+  const cx = VOL.cx, top = VOL.top, bottom = VOL.bottom;
+  const ky = bottom - pos * (bottom - top);       // つまみの位置
+  const mid = (top + bottom) / 2;
+  const muted = pos === 0;
+
+  // 背景の枠
+  ctx.fillStyle = "#1f2937";
+  roundRect(VOL_HIT.x + 4, CARD.top, VOL_HIT.w - 8, CARD.h * 3 + CARD.gap * 2, 12); ctx.fill();
+
+  // 上：見出しとスピーカーのマーク
+  text("音量", cx, CARD.top + 20, "bold 13px sans-serif", "#e5e7eb");
+  drawSpeaker(cx, top - 26, muted);
+
+  // 溝と、つまみより下の色付き部分
+  ctx.fillStyle = "#374151";
+  roundRect(cx - 3, top, 6, bottom - top, 3); ctx.fill();
+  ctx.fillStyle = muted ? "#6b7280" : "#22d3ee";
+  roundRect(cx - 3, ky, 6, bottom - ky, 3); ctx.fill();
+
+  // 目盛り（一番上・真ん中・一番下）
+  ctx.fillStyle = "#6b7280";
+  for (const y of [top, mid, bottom]) ctx.fillRect(cx - 14, y - 1, 6, 2);
+  text("大", cx + 18, top, "11px sans-serif", "#6b7280");
+  text("中", cx + 18, mid, "11px sans-serif", "#6b7280");
+  text("0", cx + 18, bottom, "11px sans-serif", "#6b7280");
+
+  // つまみ
+  ctx.beginPath();
+  ctx.arc(cx, ky, 12, 0, Math.PI * 2);
+  ctx.fillStyle = "#f3f4f6"; ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = muted ? "#6b7280" : "#22d3ee"; ctx.stroke();
+
+  // 下：今の音量（真ん中 = ±0dB）
+  const db = Math.round(Sound.sliderDb());
+  const label = muted ? "OFF" : db === 0 ? "±0dB" : (db > 0 ? "+" : "") + db + "dB";
+  text(label, cx, bottom + 30, "bold 13px sans-serif", muted ? "#9ca3af" : "#e5e7eb");
+}
+
+function drawSpeaker(x, y, muted) {
+  ctx.fillStyle = "#e5e7eb";
+  ctx.beginPath();
+  ctx.moveTo(x - 10, y - 4); ctx.lineTo(x - 5, y - 4); ctx.lineTo(x + 1, y - 10);
+  ctx.lineTo(x + 1, y + 10); ctx.lineTo(x - 5, y + 4); ctx.lineTo(x - 10, y + 4);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = muted ? "#f87171" : "#e5e7eb";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (muted) {
+    ctx.moveTo(x + 5, y - 5); ctx.lineTo(x + 13, y + 5);
+    ctx.moveTo(x + 13, y - 5); ctx.lineTo(x + 5, y + 5);
+  } else {
+    ctx.arc(x + 3, y, 6, -0.9, 0.9);
+    ctx.moveTo(x + 3 + 11 * Math.cos(-0.9), y + 11 * Math.sin(-0.9));
+    ctx.arc(x + 3, y, 11, -0.9, 0.9);
+  }
+  ctx.stroke();
 }
 
 // ===== 描画：プレイ画面 =====
@@ -705,11 +926,13 @@ function drawBricks() {
     if (!b.alive) continue;
     if (si.a) {
       drawImageArea(si.a, si.fitA, b.x, b.y, brickW, brickH);
-      ctx.strokeStyle = "rgba(0,0,0,0.35)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(b.x + 0.5, b.y + 0.5, brickW - 1, brickH - 1);
-      ctx.fillStyle = "rgba(255,255,255,0.18)";
-      ctx.fillRect(b.x + 1, b.y + 1, brickW - 2, 2);
+      // ブロックの縁（濃さ・太さは CONFIG.brickBorderColor / brickBorderWidth）
+      const lw = CONFIG.brickBorderWidth;
+      ctx.strokeStyle = CONFIG.brickBorderColor;
+      ctx.lineWidth = lw;
+      ctx.strokeRect(b.x + lw / 2, b.y + lw / 2, brickW - lw, brickH - lw);
+      ctx.fillStyle = "rgba(255,255,255,0.25)"; // 上のふちを少し明るくして立体的に
+      ctx.fillRect(b.x + lw, b.y + lw, brickW - lw * 2, 2);
     } else {
       ctx.fillStyle = ROW_COLORS[b.r % ROW_COLORS.length];
       const bx = b.x + 2, by = b.y + 2, bw = brickW - 4, bh = brickH - 4;
@@ -803,12 +1026,27 @@ function drawAllClear() {
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(0, H - 50, W, 50);
   text("FINAL SCORE: " + score, W / 2, H - 33, "bold 20px sans-serif", "#facc15");
-  text("タップでタイトルへ", W / 2, H - 12, "12px sans-serif", "#d1d5db");
+  text("ダブルタップ / ダブルクリックでタイトルへ", W / 2, H - 12, "11px sans-serif", "#9ca3af");
+}
+
+// ===== 描画：タイトル =====
+// 絵（title.png）だけを描く。「スタート」ボタンは HTML のボタンを上に重ねている
+function drawTitle() {
+  if (titleImg) {
+    drawCover(titleImg, 0, 0, W, H); // 縦画面いっぱい
+  } else {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#0b1020"); g.addColorStop(0.5, "#141a3a"); g.addColorStop(1, "#0b1020");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    text("BLOCK", W / 2, H * 0.3, "bold 72px sans-serif", "#ef4444");
+    text("ATTACK", W / 2, H * 0.3 + 72, "bold 72px sans-serif", "#ef4444");
+  }
 }
 
 function draw() {
   ctx.clearRect(0, 0, W, H);
-  if (scene === "select") drawSelect();
+  if (scene === "title") drawTitle();
+  else if (scene === "select") drawSelect();
   else if (scene === "allclear") drawAllClear();
   else drawPlay();
 }
@@ -840,7 +1078,9 @@ for (let i = 0; i < STAGE_COUNT; i++) {
   }));
 }
 loads.push(loadImage(CONFIG.imageDir + CONFIG.clearImage).then(img => { clearImg = img; }));
-Sound.load(); // 音は裏で読み込む（読み込み中でもゲームは始められる）
+loads.push(loadImage(CONFIG.imageDir + CONFIG.titleImage).then(img => { titleImg = img; }));
+// 音は裏で読み込む（読み込み中でもゲームは始められる）。読み終わったらセレクト画面の BGM
+Sound.load().then(() => { if (scene === "select") Sound.selectBGM(); });
 
 Promise.all(loads).then(() => {
   resetAll();

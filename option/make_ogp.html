@@ -109,7 +109,7 @@ function setupFrame(frame) {
   const i = Number(frame.dataset.stage);
   const tryIt = () => {
     let ready = false;
-    try { ready = w.eval("typeof stageImgs !== 'undefined' && stageImgs.length === 3 && stageImgs.every(Boolean) && scene === 'select'"); } catch (e) {}
+    try { ready = w.eval("typeof stageImgs !== 'undefined' && stageImgs.length === 3 && stageImgs.every(Boolean) && (scene === 'title' || scene === 'select')"); } catch (e) {}
     if (!ready) return setTimeout(tryIt, 50);
     w.eval(`
       CONFIG.sound = false;

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>タイトル画像の生成</title>
+<!--
+  ゲームのタイトル画面（../image/title.png、1206×2622）を組み立てるページ。
+  SNS 用のサムネイル（make_ogp.html）の縦長版です。402×874 で組み立てて、3倍の解像度で書き出します。
+  実際のゲーム（../index.html）を中に3つ表示し、少し角度を付けて並べ、上にロゴを重ねています。
+  画面の下のほうは、ゲーム側で「スタート」ボタンを重ねるので、絵を控えめにしてあります。
+  作り方は readme2.txt を見てください（Web サーバー経由で開き、Edge / Chrome で画像として保存します）。
+-->
+<style>
+  html, body { margin: 0; width: 402px; height: 874px; overflow: hidden; }
+  body {
+    position: relative;
+    background:
+      radial-gradient(ellipse 80% 30% at 50% 17%, rgba(239, 68, 68, 0.32), transparent 70%),
+      radial-gradient(ellipse 120% 45% at 50% 70%, rgba(59, 130, 246, 0.35), transparent 70%),
+      linear-gradient(180deg, #0b1020 0%, #141a3a 50%, #0b1020 100%);
+    font-family: "Arial Black", "Impact", sans-serif;
+  }
+  /* うっすらした方眼 */
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 45%, black 30%, transparent 80%);
+  }
+  /* 散らばったブロックの飾り */
+  .chip { position: absolute; width: 26px; height: 12px; border-radius: 3px; opacity: 0.55;
+          box-shadow: 0 0 10px currentColor; }
+
+  /* ゲーム画面（中身は本物のゲーム） */
+  .screen {
+    position: absolute; top: 0; left: 0;
+    width: 402px; height: 874px;
+    border: 0; border-radius: 26px;
+    box-shadow: 0 0 0 10px #1f2937, 0 0 0 12px #4b5563, 0 30px 60px rgba(0,0,0,0.7), 0 0 80px rgba(59,130,246,0.35);
+    transform-origin: 0 0;
+    pointer-events: none;
+    background: #111827;
+  }
+  .main  { left: 98px;  top: 282px; transform: perspective(1500px) rotateX(18deg) rotateZ(-3deg) scale(0.52); z-index: 3; }
+  .left  { left: -6px;  top: 330px; transform: perspective(1200px) rotateY(32deg) rotateX(10deg) rotateZ(4deg) scale(0.42); z-index: 2; filter: brightness(0.55) saturate(0.9); }
+  .right { left: 250px; top: 318px; transform: perspective(1200px) rotateY(-32deg) rotateX(10deg) rotateZ(-6deg) scale(0.42); z-index: 2; filter: brightness(0.55) saturate(0.9); }
+
+  /* 下のほう（スタートボタンを置く場所）を暗くして、ボタンが見やすいようにする */
+  .fade {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 400px; z-index: 5;
+    background:
+      radial-gradient(ellipse 70% 25% at 50% 88%, rgba(239, 68, 68, 0.22), transparent 70%),
+      linear-gradient(180deg, rgba(11,16,32,0) 0%, rgba(11,16,32,0.8) 30%, rgba(11,16,32,0.96) 55%, #0b1020 100%);
+  }
+
+  /* ロゴ：赤い文字を少し斜めに。白いふち＋影の層と、赤いグラデーションの層を重ねる */
+  .logo {
+    position: absolute; left: 0; right: 0; top: 92px; z-index: 10;
+    text-align: center; line-height: 0.86; font-size: 74px; letter-spacing: 1px;
+    transform: rotate(-7deg) skewX(-8deg);
+  }
+  .logo span { display: block; position: absolute; left: 0; right: 0; }
+  .logo .back {
+    color: #fff;
+    -webkit-text-stroke: 11px #fff;
+    text-shadow: 0 6px 0 #7f1d1d, 0 11px 18px rgba(0,0,0,0.65);
+    filter: drop-shadow(0 0 14px rgba(239,68,68,0.75));
+  }
+  .logo .mid { color: transparent; -webkit-text-stroke: 5px #7f1d1d; }
+  .logo .front {
+    background: linear-gradient(180deg, #ff8a8a 0%, #ef4444 38%, #dc2626 62%, #991b1b 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .logo .shine {
+    background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 45%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<div id="chips"></div>
+
+<iframe class="screen left"  data-stage="1" src="../index.html"></iframe>
+<iframe class="screen right" data-stage="2" src="../index.html"></iframe>
+<iframe class="screen main"  data-stage="0" src="../index.html"></iframe>
+<div class="fade"></div>
+
+<div class="logo">
+  <span class="back">BLOCK<br>ATTACK</span>
+  <span class="mid">BLOCK<br>ATTACK</span>
+  <span class="front">BLOCK<br>ATTACK</span>
+  <span class="shine">BLOCK<br>ATTACK</span>
+</div>
+
+<script>
+// 背景に散らばるブロック（毎回同じ配置になるよう固定の値）
+const chips = [
+  [26, 44, "#ef4444", -18], [340, 40, "#3b82f6", 15], [60, 250, "#eab308", 12], [350, 250, "#f97316", -10],
+  [150, 24, "#22c55e", 8], [250, 30, "#eab308", -6], [20, 600, "#22c55e", 20], [365, 590, "#ef4444", -22],
+];
+for (const [x, y, c, r] of chips) {
+  const d = document.createElement("div");
+  d.className = "chip";
+  d.style.cssText = `left:${x}px;top:${y}px;background:${c};color:${c};transform:rotate(${r}deg)`;
+  document.getElementById("chips").appendChild(d);
+}
+
+// 各ゲーム画面を「プレイ中」の場面にする（make_ogp.html と同じ）
+// 崩したブロック（行, 列）。下の段を中心に崩して、下の絵（夜・開花）が見えるようにする
+const HOLES = [
+  [[9,0],[9,1],[9,2],[9,3],[9,4],[9,5],[8,1],[8,2],[8,3],[8,4],[7,2],[7,3],[6,2],[6,3],[5,3],[8,5],[7,4]],
+  [[9,0],[9,1],[9,2],[9,5],[8,0],[8,1],[7,0],[6,0],[9,4],[8,5]],
+  [[9,1],[9,2],[9,3],[9,4],[8,2],[8,3],[9,0],[9,5],[8,1],[8,4],[7,2],[7,3],[6,3],[5,3],[4,3],[7,1]],
+];
+function setupFrame(frame) {
+  const w = frame.contentWindow;
+  const i = Number(frame.dataset.stage);
+  const tryIt = () => {
+    let ready = false;
+    try { ready = w.eval("typeof stageImgs !== 'undefined' && stageImgs.length === 3 && stageImgs.every(Boolean) && (scene === 'title' || scene === 'select')"); } catch (e) {}
+    if (!ready) return setTimeout(tryIt, 50);
+    w.eval(`
+      CONFIG.sound = false;
+      Sound.stopBGM();
+      startStage(${i});
+      for (const [r, c] of ${JSON.stringify(HOLES[i])}) bricks[r * CONFIG.cols + c].alive = false;
+      score = ${[1230, 860, 2150][i]};
+      speedBoost = ${[180, 90, 260][i]};
+      paddle.x = ${[150, 120, 210][i]};
+      setScene("playing");
+      ball.x = ${[231, 76, 231][i]}; ball.y = ${[274, 274, 210][i]}; ball.vx = 0; ball.vy = 0;
+      draw();
+    `);
+    frame.dataset.ready = "1";
+    if ([...document.querySelectorAll("iframe")].every(f => f.dataset.ready)) document.title = "ready";
+  };
+  tryIt();
+}
+document.querySelectorAll("iframe").forEach(f => f.addEventListener("load", () => setupFrame(f)));
+</script>
+</body>
+</html>

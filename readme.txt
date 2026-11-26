@@ -5,7 +5,7 @@ Claud Codeを使って生成しており著作権はフリーです。
 
 この文章も含めて全てパックされた物が以下からダウンロードできますので
 自由に変更してください。
-https://hama3ura-dev.github.io/block_attack/block_attack.zip
+https://hama3ura-dev.github.io/idol_block/idol_block.zip
 
 
 このファイルは、ゲームの遊び方と、難易度の調整や画像・音の差し替えをしたい人向けの説明です。
@@ -19,18 +19,19 @@ https://hama3ura-dev.github.io/block_attack/block_attack.zip
     ogp.png       … SNS でリンクを貼ったときに出るサムネイル画像（OGP 画像、1200×630）
     readme.txt    … このファイル
     image\        … 画像
-      block1a.png   … ステージ1 農村 最初の絵（朝）              1122×960
-      block1b.png   … ステージ1 農村 ブロックを崩すと見える絵（夜）  1122×960
-      block1c.png   … ステージ1 サムネイル（ステージセレクト用）    561×480
-      block2a.png   … ステージ2 街 最初の絵（朝）                1122×960
-      block2b.png   … ステージ2 街 ブロックを崩すと見える絵（夜）    1122×960
-      block2c.png   … ステージ2 サムネイル                         561×480
-      block3a.png   … ステージ3 花畑 最初の絵（つぼみ）            1122×960
-      block3b.png   … ステージ3 花畑 ブロックを崩すと見える絵（開花） 1122×960
-      block3c.png   … ステージ3 サムネイル                         561×480
-      clear.png     … 3ステージすべてクリアしたときのご褒美画面      1206×2622
+      block1a.png   … ステージ1 龍崎薫	屋外				1122×960
+      block1b.png   … ステージ1 龍崎薫 ブロックを崩すと見える絵	1122×960
+      block1c.png   … ステージ1 サムネイル（ステージセレクト用）	561×480
+      block2a.png   … ステージ2 佐々木千枝　高級クラブ			1122×960
+      block2b.png   … ステージ2 佐々木千枝 ブロックを崩すと見える絵    1122×960
+      block2c.png   … ステージ2 サムネイル                        	 561×480
+      block3a.png   … ステージ3 赤城みりあ　ホテル			1122×960
+      block3b.png   … ステージ3 赤城みりあ ブロックを崩すと見える絵	1122×960
+      block3c.png   … ステージ3 サムネイル				561×480
+      clear.png     … 3ステージすべてクリアしたときのご褒美画面	1206×2622
     se\           … 効果音
-      start.mp3     … ステージ開始のフレーズ
+      start.mp3     … タイトル画面で「スタート」ボタンを押したときの音
+      start2.mp3    … ステージ開始のフレーズ
       brick.mp3     … ボールがブロックに当たった音
       paddle.mp3    … ボールがパドルに当たった音
       wall.mp3      … ボールが壁・天井に当たった音
@@ -224,8 +225,8 @@ index.html をメモ帳などで開き、数字や文字を書き換えて保存
   設定は index.html の先頭の <head> の中にある meta タグです（CONFIG ではありません）。
 
     og:title / og:description / description … タイトルと説明文。content="…" の中を自由に書き換える
-    og:url    … 公開しているアドレス（https://hama3ura-dev.github.io/block_attack/）
-    og:image  … OGP 画像の完全なアドレス（https://hama3ura-dev.github.io/block_attack/ogp.png）
+    og:url    … 公開しているアドレス（https://hama3ura-dev.github.io/idol_blockk/）
+    og:image  … OGP 画像の完全なアドレス（https://hama3ura-dev.github.io/idol_block/ogp.png）
 
   ・別の場所で公開するときは、og:url と og:image をそのアドレスに書き換えてください。
     （https:// から始まる完全なアドレスでないと、SNS が画像を見つけられません）

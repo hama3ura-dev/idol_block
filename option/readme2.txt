@@ -12,8 +12,10 @@
   make_stages.ps1 … ステージの画像（block1a～block3c.png・clear.png）を作る（PowerShell）
   make_se.py      … 効果音（se フォルダの mp3）を作る（Python）
   make_bgm.py     … BGM（bgm フォルダの mp3）を作る（Python）
+  make_select_bgm.py … ステージセレクト画面の BGM（bgm/select.mp3）を作る（Python。make_bgm.py を使う）
   make_favicon.py … ブラウザのタブに出るアイコン（favicon.ico）を作る（Python）
   make_ogp.html   … SNS 用のサムネイル画像（ogp.png）を組み立てるページ（Edge / Chrome で書き出す）
+  make_title.html … タイトル画面の画像（image/title.png）を組み立てるページ（ogp.png の縦長版）
   readme2.txt     … このファイル
 
   どれも、画像や音のファイルを使わず、図形や波形をプログラムで計算して作っています。
@@ -58,12 +60,14 @@
   実行方法
     python make_se.py ..\se
 
-  ・se フォルダの7つの mp3 が上書きされます。
-      start.mp3（スタート） / brick.mp3（ブロック） / paddle.mp3（パドル） / wall.mp3（壁）
+  ・se フォルダの8つの mp3 が上書きされます。
+      start.mp3（タイトルのスタートボタン） / start2.mp3（ステージ開始）
+      brick.mp3（ブロック） / paddle.mp3（パドル） / wall.mp3（壁）
       miss.mp3（ミス） / clear.mp3（ステージクリア） / allclear.mp3（全ステージクリア）
   ・音を変えたいときは、スクリプトの中の make_brick / make_paddle などの関数の数字を変えます。
     例：make_brick の 2600 や 1700 を大きくすると、ブロックの音が高くなります。
-  ・ジングル（start / clear / allclear）のメロディは、make_start / make_clear / make_allclear の
+  ・ジングル（start / start2 / clear / allclear）のメロディは、
+    make_title_start / make_start / make_clear / make_allclear の
     中に音名（"C5" = ド、"E5" = ミ など）で書いてあります。
 
 
@@ -94,6 +98,19 @@
   ・テンポや小節数、FAST_TEMPO_RATE を変えたときは、index.html の CONFIG.bgm の
     bpm / fastBpm / bars も同じ値に合わせてください。合っていないとループがずれます。
     アップテンポ版のテンポは「元のテンポ × FAST_TEMPO_RATE を四捨五入した値」です。
+
+
+■ ステージセレクトの BGM を作り直す（make_select_bgm.py）
+  シンセのアルペジオ（16分音符）・パッド・ベース・軽いドラムで、SF っぽい短いフレーズを
+  ループさせる曲です（A マイナー / 120 BPM / 8小節 = 1周16秒）。
+  音色の部品と音量（BGM_RMS_DB）は make_bgm.py のものを使っています。
+
+  実行方法（make_bgm.py と同じフォルダで）
+    python make_select_bgm.py ..\bgm
+
+  ・bgm フォルダの select.mp3 だけが上書きされます。
+  ・BPM や PROG（コード進行）の小節数を変えたときは、index.html の CONFIG.selectBgm の
+    bpm / bars も合わせてください。
 
 
 ■ アイコンを作り直す（make_favicon.py）
@@ -133,3 +150,19 @@
       スコアなど   … setupFrame の中の score / speedBoost / ball の位置
   ・Chrome を使う場合は、2 の msedge.exe の部分を
     "C:\Program Files\Google\Chrome\Application\chrome.exe" に変えます。
+
+
+■ タイトル画面の画像を作り直す（make_title.html）
+  ogp.png の縦長版です。ロゴを上に大きく置き、その下にゲーム画面3つを並べています。
+  402×874 で組み立てて 3倍で書き出すので、clear.png と同じ 1206×2622 になります。
+  「スタート」ボタンはゲーム側で重ねるので、画像には描いていません
+  （画面の下のほうは、ボタンが見やすいように暗くしてあります）。
+
+  作り方は make_ogp.html と同じです。2 のコマンドだけ次のように変えます（1行で入力）。
+    & "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --hide-scrollbars --mute-audio --force-device-scale-factor=3 --window-size=402,874 --virtual-time-budget=8000 --screenshot="$PWD\..\image\title.png" "http://localhost:8765/block_attack/option/make_title.html"
+  （option フォルダで実行すると、image フォルダの title.png が上書きされます）
+
+  ・見た目を確かめるだけなら、ブラウザで http://localhost:8765/block_attack/option/make_title.html
+    を開き、ウインドウを縦長（402×874 くらい）にして見てください。
+  ・変えられるところは make_ogp.html とほぼ同じです（ロゴの大きさは .logo の font-size、
+    画面の位置・大きさは .main / .left / .right の left・top・scale、下の暗さは .fade）。

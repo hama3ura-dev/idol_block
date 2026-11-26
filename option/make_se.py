@@ -7,7 +7,8 @@
   paddle.mp3 … パドルに当たった
   wall.mp3   … 壁に当たった
   miss.mp3   … ミス
-  start.mp3  … スタート時の短いフレーズ
+  start.mp3  … タイトル画面で「スタート」ボタンを押したときの音（start2 と同じ音色の、短い決定音）
+  start2.mp3 … ステージ開始時の短いフレーズ
   clear.mp3  … ステージクリアのジングル（ステージ1・2・3共通）
   allclear.mp3 … 3ステージすべてクリアしたときの、さらにハッピーなジングル
 """
@@ -240,6 +241,32 @@ def make_start():
     return normalize(echo(track, 0.14, 0.3, times=3), 0.9)
 
 
+def make_title_start():
+    # タイトルの「スタート」ボタン（約1.2秒）。ステージ開始（make_start）と同じ音色で、
+    # キーを G にして速く駆け上がり、明るい和音を短く鳴らす「決定！」の音
+    def voice(f, dur, vol=0.45):
+        return mix(
+            fm_tone(dur, f, f, 2.0, 2.2, 0.6, vol=vol, attack=0.004, decay_pow=1.2),
+            pulse(dur, f * 0.5, f * 0.5, duty=0.125, vol=vol * 0.35, decay_pow=1.2),
+            bell(dur, f * 2, [(1.0, 0.25, 1.0), (2.76, 0.08, 2.0)], vol=vol * 0.6, decay_pow=1.5),
+        )
+
+    step = 0.07
+    items = []
+    t = 0.0
+    for name in ("G5", "B5", "D6", "G6"):
+        items.append((t, voice(note(name), step + 0.06)))
+        t += step
+    t += 0.03
+    for name in ("G5", "B5", "D6", "G6"):
+        items.append((t, voice(note(name), 0.55, vol=0.28)))
+    items.append((t, pulse(0.55, note("G3"), note("G3"), duty=0.5, vol=0.16, decay_pow=1.4)))  # 低音で支える
+    for i, name in enumerate(("D7", "G7", "B7")):  # 高いキラキラ
+        items.append((t + 0.04 + i * 0.05, bell(0.3, note(name), [(1.0, 0.5, 1.0), (2.76, 0.2, 2.0)], vol=0.1)))
+    track = place(t + 0.6, items)
+    return normalize(echo(track, 0.12, 0.28, times=3), 0.9)
+
+
 def jingle_voice(f, dur, vol=0.45):
     """ジングル用の音色（スタートと同じ、金属的な FM ＋ パルス波 ＋ ベル）"""
     return mix(
@@ -313,7 +340,7 @@ def main():
     out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "se")
     os.makedirs(out_dir, exist_ok=True)
     for name, fn in [("brick", make_brick), ("paddle", make_paddle), ("wall", make_wall),
-                     ("miss", make_miss), ("start", make_start),
+                     ("miss", make_miss), ("start", make_title_start), ("start2", make_start),
                      ("clear", make_clear), ("allclear", make_allclear)]:
         save_mp3(fn(), os.path.join(out_dir, name + ".mp3"))
 
